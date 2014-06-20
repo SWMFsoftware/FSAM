@@ -648,6 +648,8 @@ C
             CALL INDXB (IPI2, IR, IP2, NP2)
             CALL INDXB (IPI1, IRM1, IP1, NP1)
             CALL INDXB (IPI3, IRM1, IP3, NP3)
+
+            if(NM1==0) IM1 = 1
             CALL PRDCT (NM1, B(IM1), 0, DUM, 0, DUM, NA, AN(IDXA), W3, 
      1         W1, M, AM, BM, CM, WD, WW, WU)
             IF (IPI2 - NM > 0) THEN
@@ -803,16 +805,21 @@ C
             IF (I - I2 <= 0) THEN
                W1(:M) = 0.
             ELSE
+               if(NM1 == 0) IM1 = 1
                CALL PRDCT (NM1, B(IM1), 0, DUM, 0, DUM, NA, AN(IDXA), Y(
      1            1,IMI2), W1, M, AM, BM, CM, WD, WW, WU)
             ENDIF
             IF (IPI2 - NM > 0) THEN
                W2(:M) = 0.
             ELSE
+               if(NP1 == 0) IP1 = 1
                CALL PRDCT (NP1, B(IP1), 0, DUM, 0, DUM, NC, CN(IDXC), Y(
      1            1,IPI2), W2, M, AM, BM, CM, WD, WW, WU)
             ENDIF
             W1(:M) = Y(:M,I) + W1(:M) + W2(:M)
+            if( NZ == 0) IZ = 1
+            if(NM1 == 0) IM1 = 1
+            if(NP1 == 0) IP1 = 1
             CALL PRDCT (NZ, B(IZ), NM1, B(IM1), NP1, B(IP1), 0, DUM, W1
      1         , Y(1,I), M, AM, BM, CM, WD, WW, WU)
          END DO
