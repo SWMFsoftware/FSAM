@@ -66,13 +66,14 @@ program xfsam
   
   ! output grid and initial fields and set up for future outputs
   call writegrid
+  call writerefstate
   if(ifile .lt. 0) then
     ifile = time/tout
     tfile = tout*ifile
   else
     tfile=time
   endif
-  if(.not.DoRestart) call writedata_mpi
+  if(.not.DoRestart) call writephysdata_mpi
   ifile = ifile + 1
   tfile = tfile + tout
   
@@ -132,7 +133,7 @@ program xfsam
      ! check for output time
      if(mod(itnow,itout)==itout-1) call writedata_mpi(DoWriteRestart=.true.)
      if(time > tfile) then
-        call writedata_mpi
+        call writephysdata_mpi
         ifile = ifile + 1
         tfile = tfile + tout
      endif
@@ -149,7 +150,7 @@ program xfsam
      close(16) 
      close(6)
   endif
-  call writedata_mpi
+  call writephysdata_mpi
   call writedata_mpi(DoWriteRestart=.true.)
   call MPI_finalize(ierr)
 

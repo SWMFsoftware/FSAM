@@ -7,7 +7,11 @@ module ModIoFSAM
 
   public :: writedata_mpi
 
+  public :: writephysdata_mpi
+
   public :: writegrid
+
+  public :: writerefstate
 
 contains
   
@@ -458,5 +462,548 @@ contains
     end subroutine write_var_file
     
   end subroutine writedata_mpi
+
+  !===================================================================================
+
+  subroutine writephysdata_mpi
+    use ModPar,      ONLY: inmax, jnmax, knmax, nproc1, nproc2, myid1, myid2, myid
+    use ModGrid,     ONLY: in, jn, kn, is, js, ks, x1a, x1b, x2a, x2b, x3a, x3b
+    use ModOutfile,  ONLY: v1file, v2file, v3file, b1file, b2file, b3file, sfile, &
+         pfile, ifile
+    use ModSundry,   ONLY: time
+    use ModField,    ONLY: v1, v2, v3, b1, b2, b3, s, p
+    use ModBack,     ONLY: s0,p0s0,fact
+    use ModPhysunits
+    use ModMpi
+    use ModFSAM,     ONLY: iComm
+    implicit none
+
+    integer i,j,k,counter,nByteInquireUnit
+    integer sizes(3), subsizes(3), starts(3)
+    integer filetype,fileinfo,fhandl,mysize,ierr
+    integer(kind=MPI_OFFSET_KIND) disp
+    integer mpi_status(MPI_STATUS_SIZE)
+    character(len=4) idout
+    real, allocatable :: buf(:)
+    real :: r_agrid(inmax),r_bgrid(inmax), &
+            th_agrid(jnmax),th_bgrid(jnmax)
+!-----------------------------------------------------
+       allocate(buf(in*jn*kn))
+!
+       call combine_nproc1(x1a,r_agrid)
+       call combine_nproc1(x1b,r_bgrid)
+       call combine_nproc2(x2a,th_agrid)
+       call combine_nproc2(x2b,th_bgrid)
+       r_agrid=r_agrid*unit_l
+       r_bgrid=r_bgrid*unit_l
+!
+       write(idout,'(i4.4)') ifile
+!
+!      for v1 b1 data
+!
+       sizes(1)=inmax-4
+       sizes(2)=jnmax-5
+       sizes(3)=knmax-5
+!
+       subsizes(1)=in-5
+       starts(1)=myid1*(in-5)
+       if(myid1 .eq. nproc1-1) subsizes(1)=in-4
+!
+       subsizes(2)=jn-5
+       starts(2)=myid2*(jn-5)
+!
+       subsizes(3)=kn-5
+       starts(3)=0
+!
+       call MPI_Type_create_subarray(3, sizes, subsizes, starts, &
+         MPI_ORDER_FORTRAN, MPI_DOUBLE_PRECISION, filetype, ierr)
+       call MPI_Type_commit(filetype, ierr)
+       call MPI_Info_create(fileinfo, ierr)
+!
+       fhandl=13
+       call MPI_File_open(iComm, &
+         trim(v1file)//idout//'.physdat', &
+         IOR(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
+         fileinfo, fhandl, ierr)
+!
+       if(myid .eq. 0) then
+         call MPI_File_write(fhandl, time*unit_t, 1, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl, inmax-4, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, jnmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, knmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl,r_agrid(is:inmax-2),inmax-4, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,th_bgrid(js:jnmax-3),jnmax-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,x3b(ks:kn-3),kn-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       endif
+!
+       inquire(iolength = nByteInquireUnit) 1d0
+       nByteInquireUnit = 8/nByteInquireUnit
+       inquire(IOLENGTH = disp) time, inmax, jnmax, knmax, &
+         r_agrid(is:inmax-2),th_bgrid(js:jnmax-3),x3b(ks:kn-3)
+       disp = disp*nByteInquireUnit
+       call MPI_FILE_SET_VIEW(fhandl, disp, &
+         MPI_DOUBLE_PRECISION, filetype, 'native', &
+         fileinfo, ierr)
+!
+       mysize=subsizes(1)*subsizes(2)*subsizes(3)
+       do k=starts(3)+1,starts(3)+subsizes(3)
+         do j=starts(2)+1,starts(2)+subsizes(2)
+           do i=starts(1)+1,starts(1)+subsizes(1)
+             counter=1+i-starts(1)-1 &
+               +(j-starts(2)-1)*subsizes(1) &
+               +(k-starts(3)-1)*subsizes(1)*subsizes(2)
+             buf(counter)=v1(is-1+i-myid1*(in-5),js-1+j-myid2*(jn-5),ks-1+k)*unit_v
+           enddo
+         enddo
+       enddo
+       call MPI_File_write_all(fhandl, buf, &
+         mysize, MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       call MPI_Barrier(iComm,ierr)
+       call MPI_File_close(fhandl, ierr)
+!
+       call MPI_Barrier(iComm,ierr)
+       fhandl=13
+       call MPI_File_open(iComm, &
+         trim(b1file)//idout//'.physdat', &
+         IOR(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
+         fileinfo, fhandl, ierr)
+!
+       if(myid .eq. 0) then
+         call MPI_File_write(fhandl, time*unit_t, 1, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl, inmax-4, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, jnmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, knmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl,r_agrid(is:inmax-2),inmax-4, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,th_bgrid(js:jnmax-3),jnmax-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,x3b(ks:kn-3),kn-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       endif
+!
+       inquire(iolength = nByteInquireUnit) 1d0
+       nByteInquireUnit = 8/nByteInquireUnit
+       inquire(IOLENGTH = disp) time, inmax, jnmax, knmax, &
+         r_agrid(is:inmax-2),th_bgrid(js:jnmax-3),x3b(ks:kn-3)
+       disp = disp*nByteInquireUnit
+       call MPI_FILE_SET_VIEW(fhandl, disp, &
+         MPI_DOUBLE_PRECISION, filetype, 'native', &
+         fileinfo, ierr)
+!
+       mysize=subsizes(1)*subsizes(2)*subsizes(3)
+       do k=starts(3)+1,starts(3)+subsizes(3)
+         do j=starts(2)+1,starts(2)+subsizes(2)
+           do i=starts(1)+1,starts(1)+subsizes(1)
+             counter=1+i-starts(1)-1 &
+               +(j-starts(2)-1)*subsizes(1) &
+               +(k-starts(3)-1)*subsizes(1)*subsizes(2)
+             buf(counter)=b1(is-1+i-myid1*(in-5),js-1+j-myid2*(jn-5),ks-1+k)*unit_b
+           enddo
+         enddo
+       enddo
+       call MPI_File_write_all(fhandl, buf, &
+         mysize, MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       call MPI_Barrier(iComm,ierr)
+       call MPI_File_close(fhandl, ierr)
+!
+!      for v2 b2 data
+!
+       sizes(1)=inmax-5
+       sizes(2)=jnmax-4
+       sizes(3)=knmax-5
+!
+       subsizes(1)=in-5
+       starts(1)=myid1*(in-5)
+!
+       subsizes(2)=jn-5
+       starts(2)=myid2*(jn-5)
+       if(myid2 .eq. nproc2-1) subsizes(2)=jn-4
+!
+       subsizes(3)=kn-5
+       starts(3)=0
+!
+       call MPI_Type_create_subarray(3, sizes, subsizes, starts, &
+         MPI_ORDER_FORTRAN, MPI_DOUBLE_PRECISION, filetype, ierr)
+       call MPI_Type_commit(filetype, ierr)
+       call MPI_Info_create(fileinfo, ierr)
+!
+       call MPI_Barrier(iComm,ierr)
+       fhandl=13
+       call MPI_File_open(iComm, &
+         trim(v2file)//idout//'.physdat', &
+         IOR(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
+         fileinfo, fhandl, ierr)
+!
+       if(myid .eq. 0) then
+         call MPI_File_write(fhandl, time*unit_t, 1, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl, inmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, jnmax-4, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, knmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl,r_bgrid(is:inmax-3),inmax-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,th_agrid(js:jnmax-2),jnmax-4, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,x3b(ks:kn-3),kn-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       endif
+!
+       inquire(iolength = nByteInquireUnit) 1d0
+       nByteInquireUnit = 8/nByteInquireUnit
+       inquire(IOLENGTH = disp) time, inmax, jnmax, knmax, &
+         r_bgrid(is:inmax-3),th_agrid(js:jnmax-2),x3b(ks:kn-3)
+       disp = disp*nByteInquireUnit
+       call MPI_FILE_SET_VIEW(fhandl, disp, &
+         MPI_DOUBLE_PRECISION, filetype, 'native', &
+         fileinfo, ierr)
+!
+       mysize=subsizes(1)*subsizes(2)*subsizes(3)
+       do k=starts(3)+1,starts(3)+subsizes(3)
+         do j=starts(2)+1,starts(2)+subsizes(2)
+           do i=starts(1)+1,starts(1)+subsizes(1)
+             counter=1+i-starts(1)-1 &
+               +(j-starts(2)-1)*subsizes(1) &
+               +(k-starts(3)-1)*subsizes(1)*subsizes(2)
+             buf(counter)=v2(is-1+i-myid1*(in-5),js-1+j-myid2*(jn-5),ks-1+k)*unit_v
+           enddo
+         enddo
+       enddo
+       call MPI_File_write_all(fhandl, buf, &
+         mysize, MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       call MPI_Barrier(iComm,ierr)
+       call MPI_File_close(fhandl, ierr)
+!
+       call MPI_Barrier(iComm,ierr)
+       fhandl=13
+       call MPI_File_open(iComm, &
+         trim(b2file)//idout//'.physdat', &
+         IOR(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
+         fileinfo, fhandl, ierr)
+!
+       if(myid .eq. 0) then
+         call MPI_File_write(fhandl, time*unit_t, 1, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl, inmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, jnmax-4, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, knmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl,r_bgrid(is:inmax-3),inmax-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,th_agrid(js:jnmax-2),jnmax-4, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,x3b(ks:kn-3),kn-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       endif
+!
+       inquire(iolength = nByteInquireUnit) 1d0
+       nByteInquireUnit = 8/nByteInquireUnit
+       inquire(IOLENGTH = disp) time, inmax, jnmax, knmax, &
+         r_bgrid(is:inmax-3),th_agrid(js:jnmax-2),x3b(ks:kn-3)
+       disp = disp*nByteInquireUnit
+       call MPI_FILE_SET_VIEW(fhandl, disp, &
+         MPI_DOUBLE_PRECISION, filetype, 'native', &
+         fileinfo, ierr)
+!
+       mysize=subsizes(1)*subsizes(2)*subsizes(3)
+       do k=starts(3)+1,starts(3)+subsizes(3)
+         do j=starts(2)+1,starts(2)+subsizes(2)
+           do i=starts(1)+1,starts(1)+subsizes(1)
+             counter=1+i-starts(1)-1 &
+               +(j-starts(2)-1)*subsizes(1) &
+               +(k-starts(3)-1)*subsizes(1)*subsizes(2)
+             buf(counter)=b2(is-1+i-myid1*(in-5),js-1+j-myid2*(jn-5),ks-1+k)*unit_b
+           enddo
+         enddo
+       enddo
+       call MPI_File_write_all(fhandl, buf, &
+         mysize, MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       call MPI_Barrier(iComm,ierr)
+       call MPI_File_close(fhandl, ierr)
+!
+!      for v3 b3 data
+!
+       sizes(1)=inmax-5
+       sizes(2)=jnmax-5
+       sizes(3)=knmax-4
+!
+       subsizes(1)=in-5
+       starts(1)=myid1*(in-5)
+!
+       subsizes(2)=jn-5
+       starts(2)=myid2*(jn-5)
+!
+       subsizes(3)=kn-4
+       starts(3)=0
+!
+       call MPI_Type_create_subarray(3, sizes, subsizes, starts, &
+         MPI_ORDER_FORTRAN, MPI_DOUBLE_PRECISION, filetype, ierr)
+       call MPI_Type_commit(filetype, ierr)
+       call MPI_Info_create(fileinfo, ierr)
+!
+       call MPI_Barrier(iComm,ierr)
+       fhandl=13
+       call MPI_File_open(iComm, &
+         trim(v3file)//idout//'.physdat', &
+         IOR(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
+         fileinfo, fhandl, ierr)
+!
+       if(myid .eq. 0) then
+         call MPI_File_write(fhandl, time*unit_t, 1, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl, inmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, jnmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, knmax-4, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl,r_bgrid(is:inmax-3),inmax-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,th_bgrid(js:jnmax-3),jnmax-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,x3a(ks:kn-2),kn-4, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       endif
+!
+       inquire(iolength = nByteInquireUnit) 1d0
+       nByteInquireUnit = 8/nByteInquireUnit
+       inquire(IOLENGTH = disp) time, inmax, jnmax, knmax, &
+         r_bgrid(is:inmax-3),th_bgrid(js:jnmax-3),x3a(ks:kn-2)
+       disp = disp*nByteInquireUnit
+       call MPI_FILE_SET_VIEW(fhandl, disp, &
+         MPI_DOUBLE_PRECISION, filetype, 'native', &
+         fileinfo, ierr)
+!
+       mysize=subsizes(1)*subsizes(2)*subsizes(3)
+       do k=starts(3)+1,starts(3)+subsizes(3)
+         do j=starts(2)+1,starts(2)+subsizes(2)
+           do i=starts(1)+1,starts(1)+subsizes(1)
+             counter=1+i-starts(1)-1 &
+               +(j-starts(2)-1)*subsizes(1) &
+               +(k-starts(3)-1)*subsizes(1)*subsizes(2)
+             buf(counter)=v3(is-1+i-myid1*(in-5),js-1+j-myid2*(jn-5),ks-1+k)*unit_v
+           enddo
+         enddo
+       enddo
+       call MPI_File_write_all(fhandl, buf, &
+         mysize, MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       call MPI_Barrier(iComm,ierr)
+       call MPI_File_close(fhandl, ierr)
+!
+       call MPI_Barrier(iComm,ierr)
+       fhandl=13
+       call MPI_File_open(iComm, &
+         trim(b3file)//idout//'.physdat', &
+         IOR(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
+         fileinfo, fhandl, ierr)
+!
+       if(myid .eq. 0) then
+         call MPI_File_write(fhandl, time*unit_t, 1, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl, inmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, jnmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, knmax-4, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl,r_bgrid(is:inmax-3),inmax-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,th_bgrid(js:jnmax-3),jnmax-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,x3a(ks:kn-2),kn-4, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       endif
+!
+       inquire(iolength = nByteInquireUnit) 1d0
+       nByteInquireUnit = 8/nByteInquireUnit
+       inquire(IOLENGTH = disp) time, inmax, jnmax, knmax, &
+         r_bgrid(is:inmax-3),th_bgrid(js:jnmax-3),x3a(ks:kn-2)
+       disp = disp*nByteInquireUnit
+       call MPI_FILE_SET_VIEW(fhandl, disp, &
+         MPI_DOUBLE_PRECISION, filetype, 'native', &
+         fileinfo, ierr)
+!
+       mysize=subsizes(1)*subsizes(2)*subsizes(3)
+       do k=starts(3)+1,starts(3)+subsizes(3)
+         do j=starts(2)+1,starts(2)+subsizes(2)
+           do i=starts(1)+1,starts(1)+subsizes(1)
+             counter=1+i-starts(1)-1 &
+               +(j-starts(2)-1)*subsizes(1) &
+               +(k-starts(3)-1)*subsizes(1)*subsizes(2)
+             buf(counter)=b3(is-1+i-myid1*(in-5),js-1+j-myid2*(jn-5),ks-1+k)*unit_b
+           enddo
+         enddo
+       enddo
+       call MPI_File_write_all(fhandl, buf, &
+         mysize, MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       call MPI_Barrier(iComm,ierr)
+       call MPI_File_close(fhandl, ierr)
+!
+!      for s p data
+!
+       sizes(1)=inmax-5
+       sizes(2)=jnmax-5
+       sizes(3)=knmax-5
+!
+       subsizes(1)=in-5
+       starts(1)=myid1*(in-5)
+!
+       subsizes(2)=jn-5
+       starts(2)=myid2*(jn-5)
+!
+       subsizes(3)=kn-5
+       starts(3)=0
+!
+       call MPI_Type_create_subarray(3, sizes, subsizes, starts, &
+         MPI_ORDER_FORTRAN, MPI_DOUBLE_PRECISION, filetype, ierr)
+       call MPI_Type_commit(filetype, ierr)
+       call MPI_Info_create(fileinfo, ierr)
+!
+       call MPI_Barrier(iComm,ierr)
+       fhandl=13
+       call MPI_File_open(iComm, &
+         trim(sfile)//idout//'.physdat', &
+         IOR(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
+         fileinfo, fhandl, ierr)
+!
+       if(myid .eq. 0) then
+         call MPI_File_write(fhandl, time*unit_t, 1, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl, inmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, jnmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, knmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl,r_bgrid(is:inmax-3),inmax-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,th_bgrid(js:jnmax-3),jnmax-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,x3b(ks:kn-3),kn-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       endif
+!
+       inquire(iolength = nByteInquireUnit) 1d0
+       nByteInquireUnit = 8/nByteInquireUnit
+       inquire(IOLENGTH = disp) time, inmax, jnmax, knmax, &
+         r_bgrid(is:inmax-3),th_bgrid(js:jnmax-3),x3b(ks:kn-3)
+       disp = disp*nByteInquireUnit
+       call MPI_FILE_SET_VIEW(fhandl, disp, &
+         MPI_DOUBLE_PRECISION, filetype, 'native', &
+         fileinfo, ierr)
+!
+       mysize=subsizes(1)*subsizes(2)*subsizes(3)
+       do k=starts(3)+1,starts(3)+subsizes(3)
+         do j=starts(2)+1,starts(2)+subsizes(2)
+           do i=starts(1)+1,starts(1)+subsizes(1)
+             counter=1+i-starts(1)-1 &
+               +(j-starts(2)-1)*subsizes(1) &
+               +(k-starts(3)-1)*subsizes(1)*subsizes(2)
+             buf(counter)=(s(is-1+i-myid1*(in-5),js-1+j-myid2*(jn-5),ks-1+k)+s0(is-1+i))*unit_s
+           enddo
+         enddo
+       enddo
+       call MPI_File_write_all(fhandl, buf, &
+         mysize, MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       call MPI_Barrier(iComm,ierr)
+       call MPI_File_close(fhandl, ierr)
+!
+       call MPI_Barrier(iComm,ierr)
+       fhandl=13
+       call MPI_File_open(iComm, &
+         trim(pfile)//idout//'.physdat', &
+         IOR(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
+         fileinfo, fhandl, ierr)
+!
+       if(myid .eq. 0) then
+         call MPI_File_write(fhandl, time*unit_t, 1, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl, inmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, jnmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl, knmax-5, 1, MPI_INTEGER, &
+           mpi_status, ierr)
+         call MPI_File_write(fhandl,r_bgrid(is:inmax-3),inmax-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,th_bgrid(js:jnmax-3),jnmax-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+         call MPI_File_write(fhandl,x3b(ks:kn-3),kn-5, &
+           MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       endif
+!
+       inquire(iolength = nByteInquireUnit) 1d0
+       nByteInquireUnit = 8/nByteInquireUnit
+       inquire(IOLENGTH = disp) time, inmax, jnmax, knmax, &
+         r_bgrid(is:inmax-3),th_bgrid(js:jnmax-3),x3b(ks:kn-3)
+       disp = disp*nByteInquireUnit
+       call MPI_FILE_SET_VIEW(fhandl, disp, &
+         MPI_DOUBLE_PRECISION, filetype, 'native', &
+         fileinfo, ierr)
+!
+       mysize=subsizes(1)*subsizes(2)*subsizes(3)
+       do k=starts(3)+1,starts(3)+subsizes(3)
+         do j=starts(2)+1,starts(2)+subsizes(2)
+           do i=starts(1)+1,starts(1)+subsizes(1)
+             counter=1+i-starts(1)-1 &
+               +(j-starts(2)-1)*subsizes(1) &
+               +(k-starts(3)-1)*subsizes(1)*subsizes(2)
+             buf(counter)=(p(is-1+i-myid1*(in-5),js-1+j-myid2*(jn-5),ks-1+k)+p0s0(is-1+i))/fact(is-1+i)*unit_p
+           enddo
+         enddo
+       enddo
+       call MPI_File_write_all(fhandl, buf, &
+         mysize, MPI_DOUBLE_PRECISION, mpi_status, ierr)
+       call MPI_Barrier(iComm,ierr)
+       call MPI_File_close(fhandl, ierr)
+#endif
+!
+       call MPI_Barrier(iComm,ierr)
+!
+       deallocate(buf)
+
+  end subroutine writephysdata_mpi
+
+  !===================================================================================
+
+  subroutine writerefstate
+    use ModPar,      ONLY: inmax, myid
+    use ModBack,     ONLY: d0, gacc_str, gamma, temp0
+    use ModGrid,     ONLY: is,xxb
+    use ModPhysunits
+    use ModSolar,    ONLY: hp_czb,gacc_czb,th_czb
+    implicit none
+
+    integer i
+    !---------------------------------------------------------------------------------
+
+    if(myid .eq. 0) then
+       open(unit=13, file='refstate.dat', form='unformatted',access='stream')
+       write(13) inmax-5
+       write(13) (xxb(i)*unit_l,i=is,inmax-3)
+       write(13) (d0(i)*unit_d,i=is,inmax-3)
+       write(13) (temp0(i)*unit_temp,i=is,inmax-3)
+       write(13) (d0(i)*unit_d*temp0(i)*unit_temp*hp_czb*gacc_czb/th_czb,i=is,inmax-3)
+       write(13) (gacc_str(i)*gacc_czb,i=is,inmax-3)
+       write(13) (gamma(i),i=is,inmax-3)
+       close(13) 
+    endif
+
+  end subroutine writerefstate
 
 end module ModIoFSAM
