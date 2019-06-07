@@ -64,6 +64,7 @@ contains
     real rnormlc,rnorm
     real pmeanlc(inmax),pmeanarr(inmax)
     real s1meanlc(inmax),s1meanarr(inmax)
+    real q1
 
     !---------------------------------------------------
     !
@@ -331,6 +332,11 @@ contains
     enddo
     !
     call bvalp
+    ! subtract P by a constant value such that it's horizontal mean is zero at the top boundary
+    q1=0.5D0*(pmeanarr(inmax-3)+pmeanarr(inmax-2))
+    do k=ksm2,kep2; do j=jsm2,jep2; do i=ism2,iep2
+       p(i,j,k)=p(i,j,k)-q1
+    enddo; enddo; enddo
 
     !      ref error and error
     !
