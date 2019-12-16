@@ -971,7 +971,6 @@ contains
          mysize, MPI_DOUBLE_PRECISION, mpi_status, ierr)
        call MPI_Barrier(iComm,ierr)
        call MPI_File_close(fhandl, ierr)
-#endif
 !
        call MPI_Barrier(iComm,ierr)
 !
