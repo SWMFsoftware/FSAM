@@ -36,5 +36,3 @@ ${MY_LIB}: ${FSAM_LIB} ${OBJECTS}
 clean: cleanfiles
 
 distclean: clean
-	rm -f Makefile.DEPEND
-
