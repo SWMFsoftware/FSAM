@@ -14,12 +14,7 @@ help:
 	@echo 'make distclean  - uninstall FSAM'
 	@echo
 
-INSTALLFILES =  src/Makefile.DEPEND \
-		src/Makefile.RULES \
-		srcInterface/Makefile.DEPEND
-
 install: 
-	touch ${INSTALLFILES}
 	cp srcProblem/ModUserSetup.test.f90 src/ModUserSetup.f90
 	cp srcProblem/ModPar.test.f90 src/ModPar.f90
 
@@ -90,7 +85,6 @@ test_check:
 ################################################################################
 
 clean:	
-	@touch ${INSTALLFILES}
 	cd src; $(MAKE) clean
 	cd srcInterface; $(MAKE) clean
 	@(if [ -d util  ]; then cd util;  $(MAKE) clean; fi);
@@ -100,7 +94,6 @@ distclean:
 	./Config.pl -uninstall
 
 allclean:
-	@touch ${INSTALLFILES}
 	cd src; $(MAKE) distclean
 	cd srcInterface; $(MAKE) distclean
 	rm -f *~
