@@ -47,38 +47,39 @@ rundir:
 # run directory for test
 TESTDIR = run_test
 
-test: 
+test:
+	-@(${MAKE} test_fsam)
+
+test_fsam:
 	rm -f test_fsam.diff
 	@echo "compile..." > test_fsam.diff
-	${MAKE} test_compile
+	${MAKE} test_fsam_compile
 	@echo "rundir..." >> test_fsam.diff
-	${MAKE} test_rundir
+	${MAKE} test_fsam_rundir
 	@echo "run..." >> test_fsam.diff
-	${MAKE} test_run
+	${MAKE} test_fsam_run
 	@echo "check..." >> test_fsam.diff
-	${MAKE} test_check
+	${MAKE} test_fsam_check
 
 # This should be done with Config.pl -problem=test
 # It should not recompile if the files did not change
 
-test_compile:
+test_fsam_compile:
 	rm -f src/xfsam.exe
 	cp srcProblem/ModUserSetup.test.f90 src/ModUserSetup.f90;
 	cp srcProblem/ModPar.test.f90 src/ModPar.f90;
 	$(MAKE) xfsam
 
-test_rundir:
+test_fsam_rundir:
 	rm -rf ${TESTDIR}
 	${MAKE} rundir PROBS=test RUNDIR=${TESTDIR} STANDALONE="YES"
 
-test_run:
+test_fsam_run:
 	cd ${TESTDIR}; ${PARALLEL} ${NPFLAG} 6 xfsam.exe > runlog
 
-test_check:
-	grep -v 'Grid cell updates' ${TESTDIR}/runlog > ${TESTDIR}/runlog.new
-	grep -v 'Grid cell updates' output/runlog.ref > ${TESTDIR}/runlog.ref
-	-${SCRIPTDIR}/DiffNum.pl -a=1e-5 -t \
-		${TESTDIR}/runlog.new ${TESTDIR}/runlog.ref \
+test_fsam_check:
+	-${SCRIPTDIR}/DiffNum.pl -a=1e-5 -t -p="grep -v 'Grid cell updates'" \
+		${TESTDIR}/runlog output/runlog.ref \
 		> test_fsam.diff
 	ls -l test_fsam.diff
 
