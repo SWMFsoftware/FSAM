@@ -156,26 +156,3 @@ program xfsam
 
 end program xfsam
 
-!============================================================================
-! The following subroutines are here so that we can use SWMF library routines
-! Also some features available in SWMF mode only require empty subroutines
-! for compilation of the stand alone code.
-!============================================================================
-subroutine CON_stop(StringError)
-  use ModPar,      ONLY: myid
-  use ModSundry,   ONLY: time
-  use ModMpi
-  use ModFSAM
-  implicit none
-  character (len=*), intent(in) :: StringError
-  
-  ! Local variables:
-  integer :: iError, nError
-  !----------------------------------------------------------------------------
-
-  write(*,*) 'Stopping execution! me=',myid,' at time=', time, ' with msg:'
-  write(*,*) StringError
-  call MPI_abort(iComm, nError, iError)
-  stop
-
-end subroutine CON_stop

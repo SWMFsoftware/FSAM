@@ -29,6 +29,9 @@ contains
   !===================================================================================
 
   subroutine lint(xa,ya,n,x,y)
+
+    use ModUtilities, ONLY: CON_stop
+
     ! linear interpolation at x
     implicit none
 
