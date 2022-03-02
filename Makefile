@@ -48,7 +48,9 @@ rundir:
 TESTDIR = run_test
 
 test:
-	-@(${MAKE} test_fsam)
+	echo "No test for FSAM to save time"
+
+# -@(${MAKE} test_fsam)
 
 test_fsam:
 	rm -f test_fsam.diff
